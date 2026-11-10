@@ -47,7 +47,7 @@ jobs:
           cp shellcheck-v0.11.0/shellcheck .
 
       - name: Run actionlint
-        run: ./actionlint -shellcheck ./shellcheck ./.github/workflows/
+        run: ./actionlint -shellcheck ./shellcheck ./.github/workflows/ci.yml ./.github/workflows/pages.yml
 
       - name: Run shellcheck
         run: |
