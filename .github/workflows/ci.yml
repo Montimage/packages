@@ -15,14 +15,16 @@ jobs:
       contents: read
     steps:
       - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Download actionlint
         run: |
           set -euo pipefail
-          curl -sLO "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz"
-          curl -sLO "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_checksums.txt"
-          EXPECTED="8aca8db96f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz"
+          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_checksums.txt"
+          EXPECTED="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
           ACTUAL=$(sha256sum actionlint_1.7.12_linux_amd64.tar.gz | awk '{print $1}')
           if [ "$ACTUAL" != "$EXPECTED" ]; then
             echo "actionlint SHA256 mismatch: expected $EXPECTED, got $ACTUAL" >&2
@@ -34,7 +36,7 @@ jobs:
       - name: Download shellcheck
         run: |
           set -euo pipefail
-          curl -sLO "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
+          curl -fsSLO "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
           EXPECTED="8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
           ACTUAL=$(sha256sum shellcheck-v0.11.0.linux.x86_64.tar.xz | awk '{print $1}')
           if [ "$ACTUAL" != "$EXPECTED" ]; then
@@ -45,7 +47,13 @@ jobs:
           cp shellcheck-v0.11.0/shellcheck .
 
       - name: Run actionlint
-        run: ./actionlint .github/workflows/
+        run: ./actionlint -shellcheck ./shellcheck .github/workflows/
 
       - name: Run shellcheck
-        run: ./shellcheck --exclude=2148 --exclude=2215 --exclude=2216 .github/workflows/*.yml
+        run: |
+          SH_FILES=$(git ls-files '*.sh')
+          if [ -z "$SH_FILES" ]; then
+            echo "No tracked shell scripts to lint — skipping shellcheck."
+          else
+            ./shellcheck --severity=error $SH_FILES
+          fi
