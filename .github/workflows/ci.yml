@@ -55,5 +55,5 @@ jobs:
           if [ -z "$SH_FILES" ]; then
             echo "No tracked shell scripts to lint — skipping shellcheck."
           else
-            ./shellcheck --severity=error $SH_FILES
+            ./shellcheck --severity=error "$SH_FILES"
           fi
