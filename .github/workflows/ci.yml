@@ -23,15 +23,13 @@ jobs:
         run: |
           set -euo pipefail
           curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz"
-          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_checksums.txt"
           EXPECTED="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
           ACTUAL=$(sha256sum actionlint_1.7.12_linux_amd64.tar.gz | awk '{print $1}')
           if [ "$ACTUAL" != "$EXPECTED" ]; then
             echo "actionlint SHA256 mismatch: expected $EXPECTED, got $ACTUAL" >&2
             exit 1
           fi
-          tar xzf actionlint_1.7.12_linux_amd64.tar.gz
-          chmod +x actionlint
+          tar xzf actionlint_1.7.12_linux_amd64.tar.gz -C "$RUNNER_TEMP"
 
       - name: Download shellcheck
         run: |
@@ -43,17 +41,24 @@ jobs:
             echo "shellcheck SHA256 mismatch: expected $EXPECTED, got $ACTUAL" >&2
             exit 1
           fi
-          tar xJf shellcheck-v0.11.0.linux.x86_64.tar.xz
-          cp shellcheck-v0.11.0/shellcheck .
+          tar xJf shellcheck-v0.11.0.linux.x86_64.tar.xz -C "$RUNNER_TEMP" shellcheck-v0.11.0/shellcheck
+
+      - name: Check for .deb files
+        run: |
+          DEB_FILES=$(git ls-files '*.deb')
+          if [ -n "$DEB_FILES" ]; then
+            echo "ERROR: .deb files must not be tracked in git:" >&2
+            echo "$DEB_FILES" >&2
+            exit 1
+          fi
 
       - name: Run actionlint
-        run: ./actionlint -shellcheck ./shellcheck ./.github/workflows/ci.yml ./.github/workflows/pages.yml
+        run: "$RUNNER_TEMP/actionlint" -shellcheck "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck"
 
       - name: Run shellcheck
         run: |
-          SH_FILES=$(git ls-files '*.sh')
-          if [ -z "$SH_FILES" ]; then
-            echo "No tracked shell scripts to lint — skipping shellcheck."
+          if git ls-files -z '*.sh' | grep -qz .; then
+            git ls-files -z '*.sh' | xargs -0 -r "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck"
           else
-            ./shellcheck --severity=error "$SH_FILES"
+            echo "No tracked shell scripts to lint — skipping shellcheck."
           fi

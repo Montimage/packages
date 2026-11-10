@@ -24,7 +24,8 @@ Repository conventions for Montimage/packages.
 
 ## Pages deployment
 
-- The `pages` environment is limited to `main`.
+- The `github-pages` environment is limited to `main`.
+- The `apt-signing` environment is limited to `main`.
 - The deploy job uses `pages: write` and `id-token: write` permissions.
 
 ## Signing key
