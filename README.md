@@ -14,14 +14,18 @@ https://montimage.github.io/packages.
 ### Install the signing key
 
 ```sh
-curl -fsSL https://montimage.github.io/packages/mmt-archive-keyring.gpg \
-  | sudo tee /etc/apt/keyrings/mmt.gpg >/dev/null
+sudo apt-get install -y curl gnupg
+sudo install -d -m 0755 /etc/apt/keyrings
+curl -fsSL -o /tmp/montimage-archive-keyring.gpg https://montimage.github.io/packages/montimage-archive-keyring.gpg
+gpg --show-keys /tmp/montimage-archive-keyring.gpg
 ```
 
-Verify the fingerprint (compare with the published value):
+Compare the fingerprint with the one published in
+[docs/signing-key.md#fingerprint](docs/signing-key.md#fingerprint) (TBD until
+the maintainer creates the key). Then install:
 
 ```sh
-gpg --show-keys /etc/apt/keyrings/mmt.gpg
+sudo install -m 0644 /tmp/montimage-archive-keyring.gpg /etc/apt/keyrings/montimage-archive-keyring.gpg
 ```
 
 ### Add the source
@@ -34,11 +38,18 @@ Types: deb
 URIs: https://montimage.github.io/packages
 Suites: <your codename>
 Components: main
-Signed-By: /etc/apt/keyrings/mmt.gpg
+Signed-By: /etc/apt/keyrings/montimage-archive-keyring.gpg
 ```
 
 Replace `<your codename>` with the value from `/etc/os-release` `VERSION_CODENAME`
 (e.g. `jammy`, `noble`, `bookworm`, `trixie`).
+
+```sh
+sudo apt-get update && sudo apt-get install mmt-dpi
+```
+
+> **Note:** after any key change (a new expiry, a new subkey, a revocation),
+> download the keyring again. apt does not update it by itself.
 
 ## Key model
 

@@ -18,7 +18,10 @@ Repository conventions for Montimage/packages.
 
 ## CI workflows
 
-- Pull requests run **shellcheck** and **actionlint** on all `.github/workflows/*.yml` files.
+- **shellcheck** runs on tracked `*.sh` files and, through actionlint, on
+  `run:` blocks inside workflows.
+- **actionlint** lints every workflow file (`.yml` and `.yaml`), including
+  shellcheck on `run:` blocks.
 - Tools are downloaded from upstream releases and verified by SHA256.
 - No `curl | sh` or `curl | bash`.
 

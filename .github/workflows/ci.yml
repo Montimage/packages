@@ -22,6 +22,7 @@ jobs:
       - name: Download actionlint
         run: |
           set -euo pipefail
+          cd "$RUNNER_TEMP"
           curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz"
           EXPECTED="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
           ACTUAL=$(sha256sum actionlint_1.7.12_linux_amd64.tar.gz | awk '{print $1}')
@@ -34,6 +35,7 @@ jobs:
       - name: Download shellcheck
         run: |
           set -euo pipefail
+          cd "$RUNNER_TEMP"
           curl -fsSLO "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
           EXPECTED="8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
           ACTUAL=$(sha256sum shellcheck-v0.11.0.linux.x86_64.tar.xz | awk '{print $1}')
