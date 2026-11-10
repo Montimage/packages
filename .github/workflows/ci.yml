@@ -53,7 +53,8 @@ jobs:
           fi
 
       - name: Run actionlint
-        run: "$RUNNER_TEMP/actionlint" -shellcheck "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck"
+        run: |
+          "$RUNNER_TEMP/actionlint" -shellcheck "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck"
 
       - name: Run shellcheck
         run: |
