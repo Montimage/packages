@@ -5,8 +5,9 @@
 #
 # For every dists/<suite>/Release:
 #   - InRelease and Release.gpg verify with gpgv against <keyring> alone (an
-#     empty GNUPGHOME, so no other key can count), and InRelease carries the
-#     same text as Release;
+#     empty GNUPGHOME, so no other key can count), each with exactly one good
+#     signature from a key that is neither expired nor revoked, and InRelease
+#     carries the same text as Release;
 #   - with --expect-signer, both signatures were made by that (sub)key;
 #   - the Release fields are the expected ones, with no Valid-Until;
 #   - every Packages{,.gz} has the size and SHA256 that Release lists;
@@ -23,7 +24,11 @@ signer=
 while [ $# -gt 0 ]; do
   case "$1" in
     --no-pool) check_pool=0; shift ;;
-    --expect-signer) signer=${2:-}; shift 2 ;;
+    --expect-signer)
+      signer=${2:-}
+      [ -n "$signer" ] || die "--expect-signer needs a fingerprint"
+      shift 2
+      ;;
     --) shift; break ;;
     -*) die "unknown option $1" ;;
     *) break ;;
@@ -42,7 +47,7 @@ trap 'rm -rf "$scratch"' EXIT
 mkdir -m 700 "$scratch/gnupg"
 
 gpgv_check() { # <label> <gpgv args...>; prints the signing key fingerprint
-  local label=$1 status
+  local label=$1 status bad
   shift
   status="$scratch/status"
   if ! GNUPGHOME="$scratch/gnupg" gpgv --status-fd 3 --keyring "$keyring" "$@" \
@@ -50,6 +55,15 @@ gpgv_check() { # <label> <gpgv args...>; prints the signing key fingerprint
     cat "$scratch/gpgv.err" >&2
     die "gpgv rejected $label"
   fi
+  # gpgv exits 0 for a signature by an expired or revoked key (EXPKEYSIG,
+  # REVKEYSIG), which apt rejects. Require exactly one good, valid signature
+  # and nothing else.
+  bad=$(awk '$1 == "[GNUPG:]" && $2 ~ /^(EXPKEYSIG|REVKEYSIG|EXPSIG|BADSIG|ERRSIG|NO_PUBKEY)$/ { print $2 }' "$status")
+  [ -z "$bad" ] || die "$label: gpgv reported $(printf '%s' "$bad" | tr '\n' ' ')"
+  [ "$(awk '$1 == "[GNUPG:]" && $2 == "GOODSIG"' "$status" | wc -l)" -eq 1 ] ||
+    die "$label: expected exactly one good signature"
+  [ "$(awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG"' "$status" | wc -l)" -eq 1 ] ||
+    die "$label: expected exactly one valid signature"
   awk '$1 == "[GNUPG:]" && $2 == "VALIDSIG" { print $3 }' "$status"
 }
 

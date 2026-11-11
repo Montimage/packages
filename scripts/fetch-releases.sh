@@ -69,23 +69,38 @@ while IFS=$'\t' read -r published tag; do
   printf '%s\t%s\t%s\n' "$tag" "$published" "$epoch" >>"$work/releases.tsv"
   log "==> $tag (published $published)"
 
+  dir="$work/$tag"
+  mkdir -p "$dir"
+  gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name' >"$dir/.assets" ||
+    die "cannot list the assets of $tag"
   assets=()
   while IFS= read -r name; do
     [[ "$name" =~ $name_re ]] && assets+=("$name")
-  done < <(gh release view "$tag" --repo "$repo" --json assets --jq '.assets[].name' | LC_ALL=C sort)
+  done < <(LC_ALL=C sort "$dir/.assets")
   [ "${#assets[@]}" -gt 0 ] ||
     die "$tag has no mmt-dpi_<distro>-<ver>_<arch>.deb assets: it predates the canonical package names and cannot be published"
+  grep -qx SHA256SUMS "$dir/.assets" || die "$tag has no SHA256SUMS asset"
 
-  dir="$work/$tag"
-  mkdir -p "$dir"
-  patterns=(-p SHA256SUMS)
+  gh release download "$tag" --repo "$repo" --dir "$dir" -p SHA256SUMS ||
+    die "download of $tag SHA256SUMS failed"
+  attest "$dir/SHA256SUMS" "$tag"
+  log "    SHA256SUMS: attestation verified"
+
+  # The attested SHA256SUMS, not the asset list, says which packages the
+  # release has: a canonical package listed there but missing from the
+  # assets (deleted, or still uploading) fails the run.
+  awk '{ n = $2; sub(/^\*/, "", n); print n }' "$dir/SHA256SUMS" | LC_ALL=C sort >"$dir/.sums-names"
+  listed=$(grep -E "$name_re" "$dir/.sums-names" || true)
+  if [ "$listed" != "$(printf '%s\n' "${assets[@]}")" ]; then
+    diff <(printf '%s\n' "$listed") <(printf '%s\n' "${assets[@]}") >&2 || true
+    die "$tag: the canonical .deb names in SHA256SUMS (<) and in the release assets (>) differ"
+  fi
+  rm -f "$dir/.assets" "$dir/.sums-names"
+
+  patterns=()
   for name in "${assets[@]}"; do patterns+=(-p "$name"); done
   gh release download "$tag" --repo "$repo" --dir "$dir" "${patterns[@]}" ||
     die "download of $tag assets failed"
-
-  [ -s "$dir/SHA256SUMS" ] || die "$tag has no SHA256SUMS asset"
-  attest "$dir/SHA256SUMS" "$tag"
-  log "    SHA256SUMS: attestation verified"
 
   for name in "${assets[@]}"; do
     file="$dir/$name"

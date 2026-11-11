@@ -7,18 +7,29 @@
 #   SMOKE_KEYRING  path of the Signed-By keyring in the container; empty means
 #                  an UNSIGNED dry-run tree, added with "Trusted: yes" (the
 #                  deb822 form of [trusted=yes])
-#   SMOKE_EXPECT   optional: the mmt-dpi version that must be installed
+#   SMOKE_EXPECT_NEWEST  optional, for file:/repo: "1" requires the newest
+#                  mmt-dpi in this suite's Packages (by dpkg ordering)
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
 uri=${SMOKE_URI:?SMOKE_URI is required}
 keyring=${SMOKE_KEYRING:-}
-expect=${SMOKE_EXPECT:-}
+expect=
 
 # shellcheck disable=SC1091  # the container's os-release
 . /etc/os-release
 suite=${VERSION_CODENAME:?no VERSION_CODENAME in /etc/os-release}
 echo "==> $PRETTY_NAME: suite $suite from $uri"
+
+if [ "${SMOKE_EXPECT_NEWEST:-}" = 1 ]; then
+  idx="/repo/dists/$suite/main/binary-$(dpkg --print-architecture)/Packages"
+  [ -f "$idx" ] || { echo "ERROR: $idx not found" >&2; exit 1; }
+  while IFS= read -r v; do
+    if [ -z "$expect" ] || dpkg --compare-versions "$v" gt "$expect"; then expect=$v; fi
+  done < <(awk -F': ' '/^Package: / { p = $2 } /^Version: / && p == "mmt-dpi" { print $2 }' "$idx")
+  [ -n "$expect" ] || { echo "ERROR: no mmt-dpi in $idx" >&2; exit 1; }
+  echo "==> expecting mmt-dpi $expect, the newest in $idx"
+fi
 
 apt_update() {
   local i

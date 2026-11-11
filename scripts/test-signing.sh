@@ -14,8 +14,9 @@
 # expiry, so signing works only because the refreshed public keyring is
 # imported first.
 #
-# Negative checks: a tampered Release, a wrong expected signer, and signing
-# without the refreshed keyring must all fail.
+# Negative checks: a tampered Release, a wrong expected signer, a keyring in
+# which the signing subkey has expired, and signing without the refreshed
+# keyring must all fail.
 #
 # Leaves <out-dir>/dists (signed) and <out-dir>/test-keyring.gpg, for the smoke
 # test. The throwaway secret is deleted on exit.
@@ -58,7 +59,7 @@ fprs() { GNUPGHOME="$keygen" gpg --batch --with-colons --list-keys | awk -F: '/^
 
 past=20200101T000000
 kg --faked-system-time "$past" --quick-generate-key \
-  "TEST ONLY throwaway APT key <apt-test@invalid>" ed25519 cert 10y
+  "TEST ONLY throwaway APT key <apt-test@invalid>" ed25519 cert never
 primary=$(fprs | sed -n 1p)
 kg --faked-system-time "$past" --quick-add-key "$primary" ed25519 sign 1d
 suba=$(fprs | sed -n 2p)
@@ -66,8 +67,10 @@ kg --quick-add-key "$primary" ed25519 sign 1d
 subb=$(fprs | sed -n 3p)
 [ -n "$suba" ] && [ -n "$subb" ] || die "throwaway key generation failed"
 
-# The secret export is taken while subkey A is still expired (2020-01-02).
+# The secret export is taken while subkey A is still expired (2020-01-02),
+# and so is a stale public keyring, for a negative check.
 kg --armor --export-secret-subkeys "$suba!" >"$keygen/apt-signing-subkey.asc"
+kg --export --export-options export-minimal "$primary" >"$keygen/stale-keyring.gpg"
 # Renewal, then the refreshed public keyring, as in docs/signing-key.md.
 kg --quick-set-expire "$primary" 1d "$suba"
 kg --export --export-options export-minimal "$primary" >"$out/test-keyring.gpg"
@@ -89,6 +92,10 @@ if "$here/verify-repo.sh" --no-pool --expect-signer "$subb" "$keygen/negtree" "$
   die "verify-repo.sh accepted signatures from the wrong subkey"
 fi
 log "    wrong expected signer: rejected"
+if "$here/verify-repo.sh" --no-pool "$keygen/negtree" "$keygen/stale-keyring.gpg" 2>/dev/null; then
+  die "verify-repo.sh accepted a signature from a subkey that the keyring says has expired"
+fi
+log "    keyring where the signing subkey has expired: rejected (apt would refuse it)"
 first_release=$(find "$keygen/negtree/dists" -name Release | LC_ALL=C sort | head -n 1)
 printf 'Tampered: yes\n' >>"$first_release"
 if "$here/verify-repo.sh" --no-pool "$keygen/negtree" "$out/test-keyring.gpg" 2>/dev/null; then

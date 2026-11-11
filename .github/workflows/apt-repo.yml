@@ -32,11 +32,13 @@ on:
 permissions:
   contents: read
 
-# Runs on main share the "pages" group and never cancel each other, so builds,
-# deploys and smoke tests happen one run at a time, in order. Pull requests get
-# their own group.
+# Non-PR runs on main share the "pages" group: one runs at a time, in order,
+# and a running one is never cancelled. GitHub keeps only the newest pending
+# run of a group, which is enough because every run rebuilds from the latest
+# releases. Pull requests and runs on other branches (always dry runs) get a
+# group of their own, so they never displace a pending main run.
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('apt-repo-pr-{0}', github.event.pull_request.number) || 'pages' }}
+  group: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/main' && 'pages' || format('apt-repo-{0}', github.ref) }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -129,8 +131,8 @@ jobs:
       - name: Signed run or dry run?
         id: detect
         env:
-          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
-          APT_SIGNING_PASSPHRASE: ${{ secrets.APT_SIGNING_PASSPHRASE }}
+          APT_SIGNING_KEY_SET: ${{ secrets.APT_SIGNING_KEY != '' }}
+          APT_SIGNING_PASSPHRASE_SET: ${{ secrets.APT_SIGNING_PASSPHRASE != '' }}
           APT_SIGNING_FINGERPRINT: ${{ vars.APT_SIGNING_FINGERPRINT }}
         run: scripts/detect-signing.sh site/montimage-archive-keyring.gpg
 

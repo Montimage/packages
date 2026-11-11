@@ -43,10 +43,8 @@ fi
 if [ -n "$tree" ]; then
   args+=(-v "$tree:/repo:ro" -e SMOKE_URI=file:/repo)
   [ -z "$dists" ] || args+=(-v "$dists:/repo/dists:ro")
-  # The newest mmt-dpi in the tree is what apt must install.
-  expect=$(awk -F': ' '/^Package: / { p = $2 } /^Version: / && p == "mmt-dpi" { print $2 }' \
-    "${dists:-$tree/dists}"/*/main/binary-*/Packages | sort -V | tail -n 1)
-  args+=(-e "SMOKE_EXPECT=$expect")
+  # The container reads its own suite's Packages and requires the newest one.
+  args+=(-e SMOKE_EXPECT_NEWEST=1)
   if [ -z "$keyring" ]; then
     log "==> UNSIGNED dry run: installing from the local tree with Trusted: yes"
   else

@@ -3,10 +3,10 @@
 #
 # Usage: scripts/detect-signing.sh <public-keyring>
 #
-# Environment (set from the apt-signing environment; the values are only
-# tested for presence, never printed):
-#   APT_SIGNING_KEY, APT_SIGNING_PASSPHRASE  secrets
-#   APT_SIGNING_FINGERPRINT                  variable
+# Environment (set from the apt-signing environment; the secrets themselves
+# are not passed, only whether they are set):
+#   APT_SIGNING_KEY_SET, APT_SIGNING_PASSPHRASE_SET  "true" when the secret is set
+#   APT_SIGNING_FINGERPRINT                          variable
 #
 # Prints "signed" when the three values and the committed public keyring all
 # exist, "dry-run" when none of them exists, and fails when only some do, so a
@@ -25,8 +25,8 @@ keyring=$1
 present=()
 missing=()
 check() { if [ "$2" = yes ]; then present+=("$1"); else missing+=("$1"); fi; }
-check "secret APT_SIGNING_KEY" "$([ -n "${APT_SIGNING_KEY:-}" ] && echo yes || echo no)"
-check "secret APT_SIGNING_PASSPHRASE" "$([ -n "${APT_SIGNING_PASSPHRASE:-}" ] && echo yes || echo no)"
+check "secret APT_SIGNING_KEY" "$([ "${APT_SIGNING_KEY_SET:-}" = true ] && echo yes || echo no)"
+check "secret APT_SIGNING_PASSPHRASE" "$([ "${APT_SIGNING_PASSPHRASE_SET:-}" = true ] && echo yes || echo no)"
 check "variable APT_SIGNING_FINGERPRINT" "$([ -n "${APT_SIGNING_FINGERPRINT:-}" ] && echo yes || echo no)"
 check "committed $keyring" "$([ -s "$keyring" ] && echo yes || echo no)"
 

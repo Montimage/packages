@@ -28,7 +28,7 @@ keyring=$(cd "$(dirname "$keyring")" && pwd)/$(basename "$keyring")
 
 fpr=${APT_SIGNING_FINGERPRINT:-}
 pass=${APT_SIGNING_PASSPHRASE:-}
-unset APT_SIGNING_PASSPHRASE
+unset APT_SIGNING_PASSPHRASE APT_SIGNING_KEY
 [[ "$fpr" =~ ^([0-9A-Fa-f]{40}|[0-9A-Fa-f]{64})!$ ]] ||
   die "APT_SIGNING_FINGERPRINT must be the signing subkey fingerprint followed by '!'"
 [ -n "$pass" ] || die "APT_SIGNING_PASSPHRASE is empty"

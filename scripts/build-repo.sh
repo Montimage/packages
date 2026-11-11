@@ -62,10 +62,9 @@ for suite in "${APT_SUITES[@]}"; do
     n=$((n + 1))
   done <"$work/inputs.tsv"
 
-  if [ "$n" -eq 0 ]; then
-    log "::warning::suite $suite has no packages in the selected releases; it is not published"
-    continue
-  fi
+  # Users of a suite would get "no Release file" errors if it disappeared, so
+  # a suite without packages fails the build instead.
+  [ "$n" -gt 0 ] || die "suite $suite has no packages in the selected releases"
   built_suites+=("$suite")
 
   for arch in "${APT_ARCHES[@]}"; do
@@ -74,9 +73,15 @@ for suite in "${APT_SUITES[@]}"; do
     : >"$tree/$bin/Packages"
     # One apt-ftparchive call per file, in sorted order, so the index does not
     # depend on directory order. Filename: is relative to the tree root.
+    list="$work/.pool-$suite-$arch"
+    (cd "$tree" && find "$pool_rel" -type f -name "*_${arch}.deb") >"$list.unsorted" ||
+      die "cannot list $pool_rel"
+    LC_ALL=C sort "$list.unsorted" >"$list"
     while IFS= read -r deb; do
-      (cd "$tree" && apt-ftparchive packages "$deb") >>"$tree/$bin/Packages"
-    done < <(cd "$tree" && find "$pool_rel" -type f -name "*_${arch}.deb" | LC_ALL=C sort)
+      (cd "$tree" && apt-ftparchive packages "$deb") >>"$tree/$bin/Packages" ||
+        die "apt-ftparchive failed on $deb"
+    done <"$list"
+    rm -f "$list" "$list.unsorted"
     gzip -9 -n -c "$tree/$bin/Packages" >"$tree/$bin/Packages.gz"
   done
 
@@ -92,7 +97,6 @@ for suite in "${APT_SUITES[@]}"; do
   mv "$tree/dists/$suite/Release.new" "$tree/dists/$suite/Release"
   log "    $suite: $n packages"
 done
-[ "${#built_suites[@]}" -gt 0 ] || die "no suite has any package"
 
 cp -R "$site/." "$tree/"
 find "$tree" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} +
