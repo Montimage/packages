@@ -27,9 +27,38 @@ Repository conventions for Montimage/packages.
 
 ## Pages deployment
 
+- `.github/workflows/apt-repo.yml` is the **only** workflow that deploys Pages.
+  A deploy replaces the whole site, so do not add another deployer: put new
+  site files in `site/`, which that workflow copies to the root.
 - The `github-pages` environment is limited to `main`.
 - The `apt-signing` environment is limited to `main`.
 - The deploy job uses `pages: write` and `id-token: write` permissions.
+- Until the signing key exists, the workflow runs as an unsigned dry run and
+  never deploys.
+
+## APT repository scripts
+
+The workflow logic lives in `scripts/` (bash, `set -euo pipefail`,
+shellcheck-clean; shared helpers and the distribution → suite map are in
+`scripts/common.sh`). Run them locally from the repository root, with work
+directories outside the repository:
+
+```sh
+W=$(mktemp -d)
+scripts/fetch-releases.sh "$W/work"            # needs gh auth; downloads ~390 MB and verifies it
+scripts/build-repo.sh "$W/work" "$W/tree" site # unsigned tree
+scripts/summarize-repo.sh "$W/tree" "$W/work"
+scripts/test-signing.sh "$W/tree" "$W/signed"  # TEST ONLY: throwaway key, gpgv checks
+scripts/smoke-install.sh ubuntu:24.04 --tree "$W/tree"   # UNSIGNED, needs docker
+scripts/smoke-install.sh debian:13 --tree "$W/tree" \
+  --dists "$W/signed/dists" --keyring "$W/signed/test-keyring.gpg"
+```
+
+`scripts/sign-repo.sh` and `scripts/detect-signing.sh` run in CI only. Never
+run the signing script with the real key outside the `apt-signing` environment.
+
+To lint like CI: `shellcheck scripts/*.sh` and `actionlint` (1.7.12, checksum
+verified).
 
 ## Signing key
 
