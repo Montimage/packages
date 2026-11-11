@@ -1,0 +1,232 @@
+name: APT repository
+
+# Builds the APT repository from scratch from the last 2 Montimage/mmt-dpi
+# Releases, signs it with subkey A and deploys it, with site/, to GitHub Pages.
+# This is the only workflow that deploys Pages: a Pages deploy replaces the
+# whole site, so a second deployer would wipe dists/ and pool/.
+#
+# Until the signing key is configured (apt-signing secrets and the committed
+# site/montimage-archive-keyring.gpg), every run is an unsigned dry run: the
+# tree is built, tested and uploaded as an artifact, and nothing is deployed.
+# Pull requests are always dry runs.
+
+on:
+  repository_dispatch:
+    types: [mmt-dpi-release]
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "scripts/**"
+      - "site/**"
+      - ".github/workflows/apt-repo.yml"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "scripts/**"
+      - "site/**"
+      - ".github/workflows/apt-repo.yml"
+
+permissions:
+  contents: read
+
+# Runs on main share the "pages" group and never cancel each other, so builds,
+# deploys and smoke tests happen one run at a time, in order. Pull requests get
+# their own group.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('apt-repo-pr-{0}', github.event.pull_request.number) || 'pages' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build unsigned tree and test it
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Show the trigger
+        env:
+          EVENT: ${{ github.event_name }}
+          DISPATCH_TAG: ${{ github.event.client_payload.tag }}
+        run: |
+          echo "Event: $EVENT. The repository is rebuilt from the last 2 mmt-dpi releases."
+          if [ -n "$DISPATCH_TAG" ]; then echo "Dispatched for mmt-dpi $DISPATCH_TAG."; fi
+
+      - name: Install apt-ftparchive
+        run: command -v apt-ftparchive || { sudo apt-get update && sudo apt-get install -y --no-install-recommends apt-utils; }
+
+      - name: Fetch and verify the last 2 mmt-dpi releases (SHA256SUMS + attestations)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: scripts/fetch-releases.sh "$RUNNER_TEMP/work"
+
+      - name: Build the repository tree (unsigned)
+        run: scripts/build-repo.sh "$RUNNER_TEMP/work" "$RUNNER_TEMP/tree" site
+
+      - name: Summary
+        run: scripts/summarize-repo.sh "$RUNNER_TEMP/tree" "$RUNNER_TEMP/work"
+
+      - name: Upload the unsigned tree
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: apt-repo-unsigned
+          path: ${{ runner.temp }}/tree
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 7
+
+      - name: Upload dists/ for signing
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: apt-repo-dists
+          path: ${{ runner.temp }}/tree/dists
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: "TEST ONLY: sign with a throwaway key generated in this job, verify with gpgv"
+        run: scripts/test-signing.sh "$RUNNER_TEMP/tree" "$RUNNER_TEMP/test-signed"
+
+      - name: "Smoke test, UNSIGNED dry run: apt install from file: on ubuntu:24.04"
+        run: scripts/smoke-install.sh ubuntu:24.04 --tree "$RUNNER_TEMP/tree"
+
+      - name: "Smoke test, UNSIGNED dry run: apt install from file: on debian:13"
+        run: scripts/smoke-install.sh debian:13 --tree "$RUNNER_TEMP/tree"
+
+      - name: "TEST ONLY: apt install from the throwaway-signed tree (Signed-By) on ubuntu:24.04"
+        run: >-
+          scripts/smoke-install.sh ubuntu:24.04 --tree "$RUNNER_TEMP/tree"
+          --dists "$RUNNER_TEMP/test-signed/dists" --keyring "$RUNNER_TEMP/test-signed/test-keyring.gpg"
+
+      - name: "TEST ONLY: apt install from the throwaway-signed tree (Signed-By) on debian:13"
+        run: >-
+          scripts/smoke-install.sh debian:13 --tree "$RUNNER_TEMP/tree"
+          --dists "$RUNNER_TEMP/test-signed/dists" --keyring "$RUNNER_TEMP/test-signed/test-keyring.gpg"
+
+  sign:
+    name: Sign with subkey A
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: apt-signing
+    permissions:
+      contents: read
+    outputs:
+      mode: ${{ steps.detect.outputs.mode }}
+      signer: ${{ steps.detect.outputs.signer }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Signed run or dry run?
+        id: detect
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          APT_SIGNING_PASSPHRASE: ${{ secrets.APT_SIGNING_PASSPHRASE }}
+          APT_SIGNING_FINGERPRINT: ${{ vars.APT_SIGNING_FINGERPRINT }}
+        run: scripts/detect-signing.sh site/montimage-archive-keyring.gpg
+
+      - name: Download dists/
+        if: steps.detect.outputs.mode == 'signed'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: apt-repo-dists
+          path: ${{ runner.temp }}/tree/dists
+
+      - name: Sign InRelease and Release.gpg, verify with gpgv
+        if: steps.detect.outputs.mode == 'signed'
+        env:
+          APT_SIGNING_KEY: ${{ secrets.APT_SIGNING_KEY }}
+          APT_SIGNING_PASSPHRASE: ${{ secrets.APT_SIGNING_PASSPHRASE }}
+          APT_SIGNING_FINGERPRINT: ${{ vars.APT_SIGNING_FINGERPRINT }}
+        run: printf '%s\n' "$APT_SIGNING_KEY" | scripts/sign-repo.sh "$RUNNER_TEMP/tree" site/montimage-archive-keyring.gpg
+
+      - name: Upload the signatures
+        if: steps.detect.outputs.mode == 'signed'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: apt-repo-signatures
+          path: |
+            ${{ runner.temp }}/tree/dists/*/InRelease
+            ${{ runner.temp }}/tree/dists/*/Release.gpg
+          if-no-files-found: error
+          retention-days: 7
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: [build, sign]
+    if: needs.sign.outputs.mode == 'signed'
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    outputs:
+      page_url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download the unsigned tree
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: apt-repo-unsigned
+          path: ${{ runner.temp }}/tree
+
+      - name: Download the signatures
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: apt-repo-signatures
+          path: ${{ runner.temp }}/tree/dists
+
+      - name: Verify every signature and hash against the committed keyring
+        env:
+          SIGNER: ${{ needs.sign.outputs.signer }}
+        run: scripts/verify-repo.sh --expect-signer "$SIGNER" "$RUNNER_TEMP/tree" site/montimage-archive-keyring.gpg
+
+      - name: Summary
+        run: scripts/summarize-repo.sh "$RUNNER_TEMP/tree"
+
+      - name: Upload the Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ runner.temp }}/tree
+
+      - name: Deploy
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+
+  smoke:
+    name: Smoke test the live repository (${{ matrix.image }})
+    needs: deploy
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        image: ["ubuntu:24.04", "debian:13"]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: apt-get install mmt-dpi from the live URL (deb822, Signed-By)
+        env:
+          IMAGE: ${{ matrix.image }}
+          PAGE_URL: ${{ needs.deploy.outputs.page_url }}
+        run: scripts/smoke-install.sh "$IMAGE" --url "$PAGE_URL" --keyring site/montimage-archive-keyring.gpg
