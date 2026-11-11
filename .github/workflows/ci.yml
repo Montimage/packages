@@ -1,0 +1,67 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download actionlint
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz"
+          EXPECTED="8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+          ACTUAL=$(sha256sum actionlint_1.7.12_linux_amd64.tar.gz | awk '{print $1}')
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "actionlint SHA256 mismatch: expected $EXPECTED, got $ACTUAL" >&2
+            exit 1
+          fi
+          tar xzf actionlint_1.7.12_linux_amd64.tar.gz -C "$RUNNER_TEMP"
+
+      - name: Download shellcheck
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP"
+          curl -fsSLO "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz"
+          EXPECTED="8c3be12b05d5c177a04c29e3c78ce89ac86f1595681cab149b65b97c4e227198"
+          ACTUAL=$(sha256sum shellcheck-v0.11.0.linux.x86_64.tar.xz | awk '{print $1}')
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "shellcheck SHA256 mismatch: expected $EXPECTED, got $ACTUAL" >&2
+            exit 1
+          fi
+          tar xJf shellcheck-v0.11.0.linux.x86_64.tar.xz -C "$RUNNER_TEMP" shellcheck-v0.11.0/shellcheck
+
+      - name: Check for .deb files
+        run: |
+          DEB_FILES=$(git ls-files '*.deb')
+          if [ -n "$DEB_FILES" ]; then
+            echo "ERROR: .deb files must not be tracked in git:" >&2
+            echo "$DEB_FILES" >&2
+            exit 1
+          fi
+
+      - name: Run actionlint
+        run: |
+          "$RUNNER_TEMP/actionlint" -shellcheck "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck"
+
+      - name: Run shellcheck
+        run: |
+          if git ls-files -z '*.sh' | grep -qz .; then
+            git ls-files -z '*.sh' | xargs -0 -r "$RUNNER_TEMP/shellcheck-v0.11.0/shellcheck"
+          else
+            echo "No tracked shell scripts to lint — skipping shellcheck."
+          fi

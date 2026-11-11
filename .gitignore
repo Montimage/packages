@@ -1,0 +1,5 @@
+*.deb
+/actionlint
+/shellcheck*
+*.tar.gz
+*.tar.xz
