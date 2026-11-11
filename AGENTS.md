@@ -23,6 +23,13 @@ Repository conventions for Montimage/packages.
 - **actionlint** lints every workflow file (`.yml` and `.yaml`), including
   shellcheck on `run:` blocks.
 - Tools are downloaded from upstream releases and verified by SHA256.
+- Required checks on `main`: `lint` (CI) and `apt-repo-gate` (APT
+  repository). `apt-repo.yml` runs on every pull request; its `changes` job
+  decides whether the dry-run build runs (`scripts/`, `site/`, the workflow),
+  and `apt-repo-gate` passes only when the build passed or was skipped for an
+  unrelated change. Do not add a `paths:` filter to its `pull_request` trigger,
+  and do not require `Sign with subkey A`, `Deploy to GitHub Pages` or the live
+  smoke jobs: they are skipped on every pull request.
 - No `curl | sh` or `curl | bash`.
 
 ## Pages deployment
@@ -53,6 +60,20 @@ scripts/smoke-install.sh ubuntu:24.04 --tree "$W/tree"   # UNSIGNED, needs docke
 scripts/smoke-install.sh debian:13 --tree "$W/tree" \
   --dists "$W/signed/dists" --keyring "$W/signed/test-keyring.gpg"
 ```
+
+### Never delete or demote a published mmt-dpi release
+
+A published Montimage/mmt-dpi Release must not be deleted, turned back into a
+draft, or marked as a prerelease. To withdraw a broken release, publish a newer
+one instead.
+
+The reason: the `Release` `Date` is the `published_at` of the newest of the
+last 2 releases. Removing the newest one moves `Date` backwards, and apt
+silently ignores a `Release` older than the one it already has (`apt-get
+update` exits 0, with no warning). Clients that updated before the removal keep
+the stale indexes, and `apt-get install` of the removed version then gets a 404
+from the pool, until a release newer than the removed one is published. New
+clients are not affected, and nothing insecure is installed: apt fails closed.
 
 `scripts/sign-repo.sh` and `scripts/detect-signing.sh` run in CI only. Never
 run the signing script with the real key outside the `apt-signing` environment.

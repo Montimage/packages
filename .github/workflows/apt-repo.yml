@@ -21,13 +21,14 @@ on:
       - "scripts/**"
       - "site/**"
       - ".github/workflows/apt-repo.yml"
+  # Every pull request runs this workflow, so the always-reporting
+  # `apt-repo-gate` job can be a required check: a `paths:` filter here would
+  # leave the check unreported on a docs-only PR, which would then wait for it
+  # forever. The path filter lives in the `changes` job instead (the pattern
+  # of mmt-dpi's `packages-gate`, mmt-dpi issue #490).
   pull_request:
     branches:
       - main
-    paths:
-      - "scripts/**"
-      - "site/**"
-      - ".github/workflows/apt-repo.yml"
 
 permissions:
   contents: read
@@ -42,8 +43,55 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  changes:
+    # On a pull request, does the change touch anything the build reads? The
+    # checkout is the PR merge commit, so HEAD^1 is the base branch tip and
+    # HEAD^1..HEAD is exactly the PR's change. Every other event builds (push
+    # keeps its own paths filter above).
+    name: Relevant paths changed?
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      build: ${{ steps.filter.outputs.build }}
+    steps:
+      - name: Checkout
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      - name: Match the changed files against scripts/, site/ and this workflow
+        id: filter
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != "pull_request" ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Fail closed: if the diff cannot run, the job fails and so does
+          # apt-repo-gate. --no-renames also lists a file moved out of a build
+          # path under its old name; -z with core.quotePath=false lists every
+          # path verbatim.
+          git -c core.quotePath=false diff --no-renames --name-only -z HEAD^1 HEAD > "$RUNNER_TEMP/changed.z"
+          build=false
+          while IFS= read -r -d '' f; do
+            case "$f" in
+              scripts/*|site/*|.github/workflows/apt-repo.yml)
+                echo "build path changed: $f"
+                build=true ;;
+            esac
+          done < "$RUNNER_TEMP/changed.z"
+          echo "build=${build}" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build unsigned tree and test it
+    needs: changes
+    if: needs.changes.outputs.build == 'true'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
@@ -110,6 +158,37 @@ jobs:
         run: >-
           scripts/smoke-install.sh debian:13 --tree "$RUNNER_TEMP/tree"
           --dists "$RUNNER_TEMP/test-signed/dists" --keyring "$RUNNER_TEMP/test-signed/test-keyring.gpg"
+
+  apt-repo-gate:
+    # The check to require on main. It reports on every pull request: it
+    # passes when the build succeeded, or was skipped because the PR touches
+    # none of scripts/, site/ or this workflow, and fails otherwise (a failed,
+    # cancelled or unexpectedly skipped build, or a failed path filter).
+    name: apt-repo-gate
+    needs: [changes, build]
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions: {}
+    steps:
+      - name: Build succeeded, or was skipped for an unrelated change
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          RELEVANT: ${{ needs.changes.outputs.build }}
+          BUILD: ${{ needs.build.result }}
+        run: |
+          set -euo pipefail
+          echo "changes=${CHANGES} relevant=${RELEVANT:-} build=${BUILD}"
+          if [ "$CHANGES" != "success" ]; then
+            echo "::error::the path filter did not succeed (${CHANGES})"
+            exit 1
+          fi
+          if [ "$RELEVANT" = "true" ]; then want=success; else want=skipped; fi
+          if [ "$BUILD" != "$want" ]; then
+            echo "::error::expected the build to be ${want}, got ${BUILD}"
+            exit 1
+          fi
+          echo "apt-repo-gate: ok (relevant=${RELEVANT})"
 
   sign:
     name: Sign with subkey A
@@ -227,8 +306,25 @@ jobs:
         with:
           persist-credentials: false
 
+      # The dists/ this run signed: the smoke waits until Pages serves this
+      # InRelease (Pages caches for up to 10 minutes), then requires the
+      # newest mmt-dpi in its Packages.
+      - name: Download dists/
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: apt-repo-dists
+          path: ${{ runner.temp }}/deployed/dists
+
+      - name: Download the signatures
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: apt-repo-signatures
+          path: ${{ runner.temp }}/deployed/dists
+
       - name: apt-get install mmt-dpi from the live URL (deb822, Signed-By)
         env:
           IMAGE: ${{ matrix.image }}
           PAGE_URL: ${{ needs.deploy.outputs.page_url }}
-        run: scripts/smoke-install.sh "$IMAGE" --url "$PAGE_URL" --keyring site/montimage-archive-keyring.gpg
+        run: >-
+          scripts/smoke-install.sh "$IMAGE" --url "$PAGE_URL" --keyring site/montimage-archive-keyring.gpg
+          --dists "$RUNNER_TEMP/deployed/dists"

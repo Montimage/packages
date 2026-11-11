@@ -75,7 +75,8 @@ See [docs/signing-key.md](docs/signing-key.md) for rotation and revocation.
 whole repository on every run; nothing is kept between runs and no package is
 committed. It runs on a `repository_dispatch` of type `mmt-dpi-release` (sent by
 the mmt-dpi release job), on `workflow_dispatch`, on pushes to `main` that touch
-`scripts/`, `site/` or the workflow, and, as a dry run only, on pull requests.
+`scripts/`, `site/` or the workflow, and, as a dry run only, on every pull
+request (the build runs when the pull request touches those paths).
 
 1. **Fetch and verify** ([`scripts/fetch-releases.sh`](scripts/fetch-releases.sh)).
    It takes the last 2 published, non-draft, non-prerelease Releases of
@@ -107,7 +108,11 @@ the mmt-dpi release job), on `workflow_dispatch`, on pushes to `main` that touch
    `Release` has Origin and Label `Montimage`, Suite and Codename the suite,
    Architectures `amd64 arm64`, Components `main`, and no `Valid-Until`. Its
    `Date` and every file time are the publication time of the newest release,
-   so the same releases always give the same unsigned tree. The files in
+   so the same releases always give the same unsigned tree. Because of this, a
+   published mmt-dpi release must never be deleted or demoted: `Date` would move
+   backwards, and apt silently keeps its older indexes, so existing clients get
+   a 404 for the removed version. Publish a newer release instead (see
+   [AGENTS.md](AGENTS.md#never-delete-or-demote-a-published-mmt-dpi-release)). The files in
    `site/` (`index.html`, the public keyring) are copied to the root.
 3. **Test, in every run.** The tree is signed with a throwaway key made in the
    job and checked with `gpgv` ([`scripts/test-signing.sh`](scripts/test-signing.sh)),
@@ -124,7 +129,9 @@ the mmt-dpi release job), on `workflow_dispatch`, on pushes to `main` that touch
    `site/montimage-archive-keyring.gpg` alone, with every index and pool hash
    ([`scripts/verify-repo.sh`](scripts/verify-repo.sh)), and the tree is deployed
    to Pages. `mmt-dpi` is then installed from the live URL in `ubuntu:24.04` and
-   `debian:13` containers.
+   `debian:13` containers, once the site serves the `InRelease` and `Packages`
+   just signed (Pages caches for up to 10 minutes; the smoke waits at most 15),
+   and it must be the newest version.
 
 **Dry run.** While the `apt-signing` secrets and the committed keyring are
 missing, steps 1–3 run and steps 4–5 do not: nothing is deployed, and the
@@ -138,6 +145,9 @@ site, so a second deployer would erase the repository.
 
 Pull requests run [shellcheck](https://www.shellcheck.net/) and [actionlint](https://github.com/rhysd/actionlint) on every workflow file,
 and the APT repository dry run when they touch `scripts/`, `site/` or its workflow.
+The `apt-repo-gate` job reports on every pull request (it passes when the dry run
+passed, or was skipped because none of those paths changed), so it is the check
+to require, together with `lint`.
 See [AGENTS.md](AGENTS.md) for repository conventions.
 
 ## License

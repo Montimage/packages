@@ -7,8 +7,10 @@
 #   SMOKE_KEYRING  path of the Signed-By keyring in the container; empty means
 #                  an UNSIGNED dry-run tree, added with "Trusted: yes" (the
 #                  deb822 form of [trusted=yes])
-#   SMOKE_EXPECT_NEWEST  optional, for file:/repo: "1" requires the newest
-#                  mmt-dpi in this suite's Packages (by dpkg ordering)
+#   SMOKE_EXPECT_NEWEST  optional: "1" requires the newest mmt-dpi (by dpkg
+#                  ordering) in this suite's Packages under SMOKE_DISTS
+#   SMOKE_DISTS    the dists/ that holds that Packages (default /repo/dists;
+#                  for the live URL, the dists/ just deployed)
 set -euo pipefail
 
 export DEBIAN_FRONTEND=noninteractive
@@ -22,7 +24,7 @@ suite=${VERSION_CODENAME:?no VERSION_CODENAME in /etc/os-release}
 echo "==> $PRETTY_NAME: suite $suite from $uri"
 
 if [ "${SMOKE_EXPECT_NEWEST:-}" = 1 ]; then
-  idx="/repo/dists/$suite/main/binary-$(dpkg --print-architecture)/Packages"
+  idx="${SMOKE_DISTS:-/repo/dists}/$suite/main/binary-$(dpkg --print-architecture)/Packages"
   [ -f "$idx" ] || { echo "ERROR: $idx not found" >&2; exit 1; }
   while IFS= read -r v; do
     if [ -z "$expect" ] || dpkg --compare-versions "$v" gt "$expect"; then expect=$v; fi
