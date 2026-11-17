@@ -12,7 +12,7 @@ https://montimage.github.io/packages.
 ## What this repository serves
 
 - `.deb` packages for MMT tools, built from [Montimage/mmt-dpi](https://github.com/Montimage/mmt-dpi).
-- An APT repository index (`Packages`, `Packages.gz`, `Release`, `Release.gpg`, `InRelease`) signed by **subkey A** (the primary key stays offline).
+- An APT repository index (`Packages`, `Packages.gz`, `Release`, `Release.gpg`, `InRelease`) signed by **subkey A** (the primary key never leaves the maintainer's signing machine).
 - The last **2 mmt-dpi releases** are retained at any given time.
 
 ## Adding the repository
@@ -20,10 +20,12 @@ https://montimage.github.io/packages.
 ### Install the signing key
 
 ```sh
+sudo apt-get update
 sudo apt-get install -y curl gnupg
 sudo install -d -m 0755 /etc/apt/keyrings
-curl -fsSL -o /tmp/montimage-archive-keyring.gpg https://montimage.github.io/packages/montimage-archive-keyring.gpg
-gpg --show-keys /tmp/montimage-archive-keyring.gpg
+keyring=$(mktemp)
+curl -fsSL -o "$keyring" https://montimage.github.io/packages/montimage-archive-keyring.gpg
+gpg --show-keys "$keyring"
 ```
 
 Compare the fingerprint with the one published in
@@ -31,7 +33,8 @@ Compare the fingerprint with the one published in
 the maintainer creates the key). Then install:
 
 ```sh
-sudo install -m 0644 /tmp/montimage-archive-keyring.gpg /etc/apt/keyrings/montimage-archive-keyring.gpg
+sudo install -m 0644 "$keyring" /etc/apt/keyrings/montimage-archive-keyring.gpg
+rm -f "$keyring"
 ```
 
 ### Add the source
@@ -59,7 +62,7 @@ sudo apt-get update && sudo apt-get install mmt-dpi
 
 ## Key model
 
-- One **offline ed25519 primary key** (certify-only, 5-year expiry) held by the
+- One **ed25519 primary key** (certify-only, 5-year expiry), never in CI, held by the
   maintainer.
 - Two signing-only subkeys (2-year expiry):
   - **Subkey A** — signs the APT repository; lives only in this repo's CI
@@ -143,8 +146,10 @@ site, so a second deployer would erase the repository.
 
 ## CI
 
-Pull requests run [shellcheck](https://www.shellcheck.net/) and [actionlint](https://github.com/rhysd/actionlint) on every workflow file,
-and the APT repository dry run when they touch `scripts/`, `site/` or its workflow.
+Pull requests run [shellcheck](https://www.shellcheck.net/) on every tracked `*.sh` file
+and [actionlint](https://github.com/rhysd/actionlint) on every workflow file (which also
+runs shellcheck on the `run:` blocks), and the APT repository dry run when they touch
+`scripts/`, `site/` or its workflow.
 The `apt-repo-gate` job reports on every pull request (it passes when the dry run
 passed, or was skipped because none of those paths changed), so it is the check
 to require, together with `lint`.
