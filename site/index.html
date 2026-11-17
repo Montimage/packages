@@ -3,17 +3,35 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Montimage Packages — Not Yet Live</title>
+  <title>Montimage Packages</title>
   <style>
-    body { font-family: system-ui, sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; color: #333; }
+    body { font-family: system-ui, sans-serif; max-width: 720px; margin: 2rem auto; padding: 0 1rem; color: #333; }
     h1 { color: #1a1a1a; }
     a { color: #0b5394; }
+    pre { background: #f4f4f4; padding: 0.75rem; overflow-x: auto; }
   </style>
 </head>
 <body>
   <h1>Montimage Packages</h1>
-  <p>This APT repository is not yet live.</p>
-  <p>Planned URL: <a href="https://montimage.github.io/packages">https://montimage.github.io/packages</a></p>
-  <p>Tracking: <a href="https://github.com/Montimage/mmt-dpi/issues/24">Montimage/mmt-dpi#24</a></p>
+  <p>Signed APT repository for <a href="https://github.com/Montimage/mmt-dpi">mmt-dpi</a>,
+  for Ubuntu 22.04, 24.04 and 26.04 and Debian 12 and 13, on amd64 and arm64.</p>
+
+  <h2>Install</h2>
+<pre>sudo apt-get update
+sudo apt-get install -y curl gnupg
+sudo install -d -m 0755 /etc/apt/keyrings
+keyring=$(mktemp)
+curl -fsSL -o "$keyring" https://montimage.github.io/packages/montimage-archive-keyring.gpg
+gpg --show-keys "$keyring"   # must show 21630C362624FB205C3D0B184F95AECCFEF48443
+sudo install -m 0644 "$keyring" /etc/apt/keyrings/montimage-archive-keyring.gpg
+rm -f "$keyring"
+. /etc/os-release
+printf 'Types: deb\nURIs: https://montimage.github.io/packages\nSuites: %s\nComponents: main\nSigned-By: /etc/apt/keyrings/montimage-archive-keyring.gpg\n' "$VERSION_CODENAME" \
+  | sudo tee /etc/apt/sources.list.d/montimage-packages.sources &gt;/dev/null
+sudo apt-get update &amp;&amp; sudo apt-get install mmt-dpi</pre>
+
+  <p>Signing key: <code>Montimage Release Signing &lt;developer@montimage.eu&gt;</code>,
+  primary fingerprint <code>2163 0C36 2624 FB20 5C3D 0B18 4F95 AECC FEF4 8443</code>.
+  Details: <a href="https://github.com/Montimage/packages">Montimage/packages</a>.</p>
 </body>
 </html>
