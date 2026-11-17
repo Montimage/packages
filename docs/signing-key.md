@@ -222,4 +222,17 @@ AND updates mmt-dpi `debian/upstream/signing-key.asc`.
 
 ## Fingerprint
 
-TBD: published after the maintainer creates the key.
+Primary key, `Montimage Release Signing <developer@montimage.eu>`
+(ed25519, created 2026-11-17, expires 2031-11-16):
+
+```text
+2163 0C36 2624 FB20 5C3D  0B18 4F95 AECC FEF4 8443
+```
+
+| Subkey | Fingerprint | Expires |
+|--------|-------------|---------|
+| A (APT repository) | `9383150437FEF6B9BCC61DC013D801774F5BF0EB` | 2028-11-16 |
+| B (mmt-dpi source tarball) | `495827E653092A1F6760ABBC054C7A5FC3824811` | 2028-11-16 |
+
+`gpg --show-keys site/montimage-archive-keyring.gpg` must print the same
+fingerprints.

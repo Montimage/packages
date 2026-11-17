@@ -3,12 +3,6 @@
 Signed APT package repository for Montimage MMT tools, served at
 https://montimage.github.io/packages.
 
-> **Status: dry run.** The signing key does not exist yet, so the workflow
-> builds and tests the repository but does not sign or deploy it. It starts
-> publishing on its own once the maintainer has stored the `apt-signing`
-> secrets and committed `site/montimage-archive-keyring.gpg`
-> (see [How the repository is built](#how-the-repository-is-built)).
-
 ## What this repository serves
 
 - `.deb` packages for MMT tools, built from [Montimage/mmt-dpi](https://github.com/Montimage/mmt-dpi).
@@ -28,9 +22,14 @@ curl -fsSL -o "$keyring" https://montimage.github.io/packages/montimage-archive-
 gpg --show-keys "$keyring"
 ```
 
-Compare the fingerprint with the one published in
-[docs/signing-key.md#fingerprint](docs/signing-key.md#fingerprint) (TBD until
-the maintainer creates the key). Then install:
+Check that it prints this primary key fingerprint (also published in
+[docs/signing-key.md#fingerprint](docs/signing-key.md#fingerprint)):
+
+```text
+2163 0C36 2624 FB20 5C3D  0B18 4F95 AECC FEF4 8443
+```
+
+Then install:
 
 ```sh
 sudo install -m 0644 "$keyring" /etc/apt/keyrings/montimage-archive-keyring.gpg
